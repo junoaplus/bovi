@@ -197,11 +197,25 @@ async def root():
     }
 
 if __name__ == "__main__":
-    # 개발용 실행
+    import os
+    
+    # 환경변수 설정
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", 8000))
+    
+    print("🚀 보드게임 AI 백엔드 서버를 시작합니다...")
+    print(f"📡 서버 주소: http://{host}:{port}")
+    print(f"📚 API 문서: http://{host}:{port}/docs")
+    print(f"🔍 헬스체크: http://{host}:{port}/health")
+    print("⏰ 모델 로딩에 30초~2분 정도 소요됩니다...")
+    print("="*50)
+    
+    # 서버 실행
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
+        host=host,
+        port=port,
+        reload=False,  # 프로덕션에서는 reload=False
+        log_level="info",
+        access_log=True
     )
