@@ -308,3 +308,16 @@ class RAGService:
         except Exception as e:
             logger.error(f"❌ 룰 요약 실패: {str(e)}")
             return f"룰 요약 중 오류가 발생했습니다: {str(e)}"
+        
+    def get_available_games(self):
+        """사용 가능한 게임 목록 반환"""
+        if self.game_names:
+            return self.game_names
+        elif self.game_data:
+            return [game.get("game_name", "") for game in self.game_data if game.get("game_name")]
+        else:
+            # 기본 게임 목록
+            return [
+                "카탄", "스플렌더", "아줄", "윙스팬", "뱅", 
+                "킹 오브 도쿄", "7 원더스", "도미니언", "스몰 월드", "티켓 투 라이드"
+            ]
