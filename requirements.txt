@@ -12,7 +12,7 @@ numpy<2
 torch==2.7.1
 transformers==4.52.4
 sentence-transformers==4.1.0
-faiss-cpu==1.11.0
+faiss-gpu==1.11.0
 safetensors==0.5.3
 tokenizers==0.21.1
 
@@ -40,9 +40,11 @@ uvloop==0.21.0
 watchfiles==1.0.5
 psutil==6.1.0
 
-# 🔧 유틸리티
+# 🔧 유틸리티 (버전 충돌 해결)
 typing-extensions==4.13.2
-packaging==25.0
 regex==2024.11.6
 tqdm==4.67.1
 PyYAML==6.0.2
+
+# 📦 패키징 (LangChain 호환성을 위해 버전 범위 지정)
+packaging>=23.2,<25.0
