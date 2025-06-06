@@ -5,11 +5,10 @@ import uvicorn
 import os
 import logging
 from typing import List, Optional
+from dotenv import load_dotenv
 
-# 서비스 import
-from services.embedding_service import EmbeddingService
-from services.finetuning_service import FinetuningService
-from services.rag_service import RAGService
+# 환경변수 로드
+load_dotenv()
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -66,11 +65,16 @@ async def startup_event():
         global embedding_service, finetuning_service, rag_service
         
         # RAG 서비스는 필수 (게임 추천 및 룰 설명)
+        logger.info("📚 RAG 서비스 초기화 중...")
+        from services.rag_service import RAGService
         rag_service = RAGService()
         
         # 파인튜닝 서비스는 선택사항 (모델 파일이 있을 때만)
         try:
+            logger.info("🎯 파인튜닝 서비스 초기화 시도...")
+            from services.finetuning_service import FinetuningService
             finetuning_service = FinetuningService()
+            logger.info("✅ 파인튜닝 서비스 로드 성공")
         except Exception as e:
             logger.warning(f"⚠️ 파인튜닝 서비스 로드 실패 (계속 진행): {str(e)}")
             finetuning_service = None
@@ -91,6 +95,8 @@ async def health_check():
     return {
         "status": "healthy" if services_initialized else "initializing",
         "services_loaded": services_initialized,
+        "rag_service_available": rag_service is not None,
+        "rag_service_initialized": getattr(rag_service, 'initialized', False) if rag_service else False,
         "message": "보드게임 AI 백엔드가 정상 작동 중입니다!"
     }
 
@@ -98,7 +104,7 @@ async def health_check():
 async def recommend_games(request: GameRecommendationRequest):
     """게임 추천 API"""
     try:
-        if not services_initialized:
+        if not services_initialized or rag_service is None:
             raise HTTPException(status_code=503, detail="서비스가 아직 초기화되지 않았습니다.")
         
         logger.info(f"게임 추천 요청: {request.query}")
@@ -120,7 +126,7 @@ async def recommend_games(request: GameRecommendationRequest):
 async def explain_rules(request: RuleQuestionRequest):
     """룰 설명 API"""
     try:
-        if not services_initialized:
+        if not services_initialized or rag_service is None:
             raise HTTPException(status_code=503, detail="서비스가 아직 초기화되지 않았습니다.")
         
         logger.info(f"룰 질문: {request.game_name} - {request.question}")
@@ -145,7 +151,7 @@ async def explain_rules(request: RuleQuestionRequest):
 async def get_rule_summary(request: GameRuleSummaryRequest):
     """게임 룰 요약 API"""
     try:
-        if not services_initialized:
+        if not services_initialized or rag_service is None:
             raise HTTPException(status_code=503, detail="서비스가 아직 초기화되지 않았습니다.")
         
         logger.info(f"룰 요약 요청: {request.game_name}")
@@ -167,17 +173,52 @@ async def get_rule_summary(request: GameRuleSummaryRequest):
 async def get_available_games():
     """사용 가능한 게임 목록 API"""
     try:
-        # 게임 목록 로드
-        games = rag_service.get_available_games()
+        logger.info("🎮 게임 목록 요청 받음")
         
+        # 기본 게임 목록 (폴백용)
+        default_games = [
+            "카탄", "스플렌더", "아줄", "윙스팬", "뱅", 
+            "킹 오브 도쿄", "7 원더스", "도미니언", "스몰 월드", "티켓 투 라이드"
+        ]
+        
+        # 서비스 상태 확인
+        if not services_initialized or rag_service is None:
+            logger.warning("⚠️ RAG 서비스가 초기화되지 않음. 기본 목록 사용")
+            return APIResponse(
+                status="success",
+                data={"games": default_games},
+                message=f"총 {len(default_games)}개의 기본 게임을 지원합니다. (RAG 서비스 대기 중)"
+            )
+        
+        # RAG 서비스에서 게임 목록 가져오기 시도
+        try:
+            if hasattr(rag_service, 'get_available_games'):
+                games = rag_service.get_available_games()
+                
+                if games and len(games) > 0:
+                    logger.info(f"✅ RAG 서비스에서 {len(games)}개 게임 로드 성공")
+                    return APIResponse(
+                        status="success",
+                        data={"games": games},
+                        message=f"총 {len(games)}개의 게임을 지원합니다."
+                    )
+                else:
+                    logger.warning("⚠️ RAG 서비스에서 빈 게임 목록 반환")
+            else:
+                logger.error("❌ RAG 서비스에 get_available_games 메서드가 없음")
+        except Exception as e:
+            logger.error(f"❌ RAG 서비스 호출 실패: {str(e)}")
+        
+        # 폴백: 기본 게임 목록 반환
+        logger.info("📋 기본 게임 목록 사용")
         return APIResponse(
             status="success",
-            data={"games": games},
-            message=f"총 {len(games)}개의 게임을 지원합니다."
+            data={"games": default_games},
+            message=f"총 {len(default_games)}개의 기본 게임을 지원합니다."
         )
         
     except Exception as e:
-        logger.error(f"게임 목록 조회 오류: {str(e)}")
+        logger.error(f"❌ 게임 목록 조회 오류: {str(e)}")
         raise HTTPException(status_code=500, detail=f"게임 목록 조회 중 오류가 발생했습니다: {str(e)}")
 
 @app.get("/")
@@ -187,6 +228,8 @@ async def root():
         "message": "보드게임 AI 백엔드 서버",
         "version": "1.0.0",
         "status": "running",
+        "services_initialized": services_initialized,
+        "rag_service_available": rag_service is not None,
         "endpoints": {
             "health": "/health",
             "recommend": "/recommend",
