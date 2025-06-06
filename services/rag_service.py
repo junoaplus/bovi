@@ -42,50 +42,25 @@ class RAGService:
     def __init__(self):
         logger.info("🔧 RAG 서비스를 초기화합니다...")
         
-        # 초기화 상태 플래그
-        self.initialized = False
+        # 임베딩 모델 로드
+        self.embed_model = SentenceTransformer("BAAI/bge-m3", device="cuda")
+        logger.info("✅ 임베딩 모델 로드 완료")
         
-        # 기본값 먼저 설정
-        self.index = None
-        self.texts = []
-        self.game_names = []
-        self.game_data = []
-        self.embed_model = None
-        self.llm = None
+        # OpenAI 설정 (LangChain ChatOpenAI 사용)
+        self.openai_api_key = ""# 환경 변수 사용 권장
+        self.model_id = "gpt-3.5-turbo" # 파인튜닝 모델 ID
+        self.llm = ChatOpenAI(model_name=self.model_id, temperature=0.7, openai_api_key=self.openai_api_key)
         
-        try:
-            # 임베딩 모델 로드 (자동 디바이스 선택)
-            import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            logger.info(f"💻 사용 디바이스: {device}")
-            
-            self.embed_model = SentenceTransformer("BAAI/bge-m3", device=device)
-            logger.info("✅ 임베딩 모델 로드 완료")
-            
-            # OpenAI 설정 (LangChain ChatOpenAI 사용)
-            self.openai_api_key = os.getenv("OPENAI_API_KEY", "")  # 환경 변수에서 읽기
-            if not self.openai_api_key:
-                logger.warning("⚠️ OPENAI_API_KEY가 설정되지 않았습니다. .env 파일을 확인하세요.")
-            
-            self.model_id = "gpt-3.5-turbo" # 파인튜닝 모델 ID
-            self.llm = ChatOpenAI(model_name=self.model_id, temperature=0.7, openai_api_key=self.openai_api_key)
-            
-            # 게임 추천용 데이터 로드
-            self._load_recommendation_data()
-            
-            # 게임 룰 데이터 로드
-            self._load_game_rules_data()
-            
-            # LangChain 체인 설정
-            self._setup_langchain_chains()
-            
-            # 초기화 성공
-            self.initialized = True
-            logger.info("✅ RAG 서비스 초기화 완료")
-            
-        except Exception as e:
-            logger.error(f"❌ RAG 서비스 초기화 실패: {str(e)}")
-            self.initialized = False
+        # 게임 추천용 데이터 로드
+        self._load_recommendation_data()
+        
+        # 게임 룰 데이터 로드
+        self._load_game_rules_data()
+        
+        # LangChain 체인 설정
+        self._setup_langchain_chains()
+        
+        logger.info("✅ RAG 서비스 초기화 완료")
     
     def _load_recommendation_data(self):
         """게임 추천용 데이터 로드"""
@@ -147,131 +122,119 @@ class RAGService:
 
     def _setup_langchain_chains(self):
         """LangChain 체인 및 프롬프트 설정"""
-        try:
-            # 게임 추천 프롬프트 (search_similar_context의 결과를 {context}로 받음)
-            recommendation_prompt = ChatPromptTemplate.from_messages([
-                (
-                    "system",
-                    "너는 보드게임 추천 도우미야. 다음은 추천 가능한 게임 설명들이야:\n\n{context}\n\n"
-                    "반드시 이 게임 목록 안에서만 추천해. 새로운 게임을 지어내지 마.\n"
-                    "질문에 맞는 게임 {top_k}개를 골라 아래 형식으로 답해:\n"
-                    "게임명1: 이유\n게임명2: 이유\n게임명3: 이유\n"
-                    "각 줄은 '게임명: 추천 이유' 형식으로만 작성하고, 줄바꿈 이외에 아무 포맷도 쓰지 마세요.\n"
-                    "추천이 모두 끝나면 마지막 줄에 반드시 '추천 완료!' 라고 써주세요. 그 이후에는 아무 것도 쓰지 마세요."
-                ),
-                MessagesPlaceholder(variable_name="history"), # 세션 히스토리
-                ("human", "{query}")
-            ])
+        # 게임 추천 프롬프트 (search_similar_context의 결과를 {context}로 받음)
+        recommendation_prompt = ChatPromptTemplate.from_messages([
+            (
+                "system",
+                "너는 보드게임 추천 도우미야. 다음은 추천 가능한 게임 설명들이야:\n\n{context}\n\n"
+                "반드시 이 게임 목록 안에서만 추천해. 새로운 게임을 지어내지 마.\n"
+                "질문에 맞는 게임 {top_k}개를 골라 아래 형식으로 답해:\n"
+                "게임명1: 이유\n게임명2: 이유\n게임명3: 이유\n"
+                "각 줄은 '게임명: 추천 이유' 형식으로만 작성하고, 줄바꿈 이외에 아무 포맷도 쓰지 마세요.\n"
+                "추천이 모두 끝나면 마지막 줄에 반드시 '추천 완료!' 라고 써주세요. 그 이후에는 아무 것도 쓰지 마세요."
+            ),
+            MessagesPlaceholder(variable_name="history"), # 세션 히스토리
+            ("human", "{query}")
+        ])
 
-            # 게임 추천 체인 (RunnableWithMessageHistory로 히스토리 관리)
-            self.recommendation_chain = RunnableWithMessageHistory(
-                recommendation_prompt | self.llm,
-                get_session_history=get_session_history_for_rag,
-                input_messages_key="query",  # 사용자의 실제 입력 쿼리
-                history_messages_key="history" # 프롬프트의 히스토리 placeholder
-            )
+        # 게임 추천 체인 (RunnableWithMessageHistory로 히스토리 관리)
+        self.recommendation_chain = RunnableWithMessageHistory(
+            recommendation_prompt | self.llm,
+            get_session_history=get_session_history_for_rag,
+            input_messages_key="query",  # 사용자의 실제 입력 쿼리
+            history_messages_key="history" # 프롬프트의 히스토리 placeholder
+        )
 
-            # 룰 질문 답변 프롬프트 (룰 청크 검색 결과를 {context}로 받음)
-            rule_question_prompt = ChatPromptTemplate.from_messages([
-                (
-                    "system",
-                    "너는 보드게임 룰 전문 AI야. 반드시 아래 규칙을 따라야 해:\n"
-                    "- 사용자의 질문에 대해 아래 룰 설명(context)에 있는 내용만 기반해서 답변해.\n"
-                    "- 룰 설명에 없는 정보는 절대로 지어내거나 상상하지 마.\n"
-                    "- 사람 이름, 장소, 시간, 인원수 등을 추측하거나 새로 만들어내지 마.\n"
-                    "- 답할 수 없는 질문이면 '해당 정보는 룰에 명시되어 있지 않습니다.' 라고 말해."
-                ),
-                MessagesPlaceholder(variable_name="history"),
-                ("human", "아래는 '{game_name}' 보드게임의 룰 설명 일부입니다:\n\n{context}\n\n이 룰을 바탕으로 다음 질문에 정확하고 구체적으로 답변해줘:\n\n질문: {question}")
-            ])
+        # 룰 질문 답변 프롬프트 (룰 청크 검색 결과를 {context}로 받음)
+        rule_question_prompt = ChatPromptTemplate.from_messages([
+            (
+                "system",
+                "너는 보드게임 룰 전문 AI야. 반드시 아래 규칙을 따라야 해:\n"
+                "- 사용자의 질문에 대해 아래 룰 설명(context)에 있는 내용만 기반해서 답변해.\n"
+                "- 룰 설명에 없는 정보는 절대로 지어내거나 상상하지 마.\n"
+                "- 사람 이름, 장소, 시간, 인원수 등을 추측하거나 새로 만들어내지 마.\n"
+                "- 답할 수 없는 질문이면 '해당 정보는 룰에 명시되어 있지 않습니다.' 라고 말해."
+            ),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", "아래는 '{game_name}' 보드게임의 룰 설명 일부입니다:\n\n{context}\n\n이 룰을 바탕으로 다음 질문에 정확하고 구체적으로 답변해줘:\n\n질문: {question}")
+        ])
 
-            # 룰 질문 답변 체인
-            self.rule_question_chain = RunnableWithMessageHistory(
-                rule_question_prompt | self.llm,
-                get_session_history=get_session_history_for_rag,
-                input_messages_key="question",
-                history_messages_key="history"
-            )
+        # 룰 질문 답변 체인
+        self.rule_question_chain = RunnableWithMessageHistory(
+            rule_question_prompt | self.llm,
+            get_session_history=get_session_history_for_rag,
+            input_messages_key="question",
+            history_messages_key="history"
+        )
 
-            # 룰 요약 프롬프트 (전체 룰 텍스트를 {game_rule_text}로 받음)
-            rule_summary_prompt = ChatPromptTemplate.from_messages([
-                (
-                    "system",
-                    "너는 보드게임 룰 전문 AI야. 반드시 아래 규칙을 따라야 해:\n"
-                    "- 사용자가 선택한 보드게임의 룰 전체를 보고, 그 게임의 룰을 알기 쉽게 설명해줘.\n"
-                    "- 핵심 개념, 목표, 진행 방식, 승리 조건을 요약해줘.\n"
-                    "- 설명은 간결하고 구조적으로 작성해."
-                ),
-                MessagesPlaceholder(variable_name="history"),
-                ("human", "게임 이름: {game_name}\n\n룰 전체:\n{game_rule_text}\n\n이 게임의 룰을 설명해주세요.")
-            ])
+        # 룰 요약 프롬프트 (전체 룰 텍스트를 {game_rule_text}로 받음)
+        rule_summary_prompt = ChatPromptTemplate.from_messages([
+            (
+                "system",
+                "너는 보드게임 룰 전문 AI야. 반드시 아래 규칙을 따라야 해:\n"
+                "- 사용자가 선택한 보드게임의 룰 전체를 보고, 그 게임의 룰을 알기 쉽게 설명해줘.\n"
+                "- 핵심 개념, 목표, 진행 방식, 승리 조건을 요약해줘.\n"
+                "- 설명은 간결하고 구조적으로 작성해."
+            ),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", "게임 이름: {game_name}\n\n룰 전체:\n{game_rule_text}\n\n이 게임의 룰을 설명해주세요.")
+        ])
 
-            # 룰 요약 체인
-            self.rule_summary_chain = RunnableWithMessageHistory(
-                rule_summary_prompt | self.llm,
-                get_session_history=get_session_history_for_rag,
-                input_messages_key="game_name", # 게임 이름이 주 입력값이 됨
-                history_messages_key="history"
-            )
-        except Exception as e:
-            logger.error(f"❌ LangChain 체인 설정 실패: {str(e)}")
+        # 룰 요약 체인
+        self.rule_summary_chain = RunnableWithMessageHistory(
+            rule_summary_prompt | self.llm,
+            get_session_history=get_session_history_for_rag,
+            input_messages_key="game_name", # 게임 이름이 주 입력값이 됨
+            history_messages_key="history"
+        )
 
     def _search_similar_context(self, query, top_k=3):
         """
+        첫 번째 코드의 search_similar_context 함수와 동일한 RAG 검색 로직.
         쿼리를 임베딩하여 FAISS 인덱스에서 유사한 게임 설명을 찾습니다.
         """
-        if not self.index or not self.texts or not self.game_names or not self.embed_model:
+        if not self.index or not self.texts or not self.game_names:
             logger.warning("RAG 검색을 위한 인덱스나 텍스트 데이터가 로드되지 않았습니다.")
             return ""
 
-        try:
-            query_vec = self.embed_model.encode([query], normalize_embeddings=True)
-            D, I = self.index.search(np.array(query_vec), top_k)
+        query_vec = self.embed_model.encode([query], normalize_embeddings=True)
+        D, I = self.index.search(np.array(query_vec), top_k)
 
-            context_blocks = []
-            for i in I[0]:
-                if 0 <= i < len(self.game_names) and 0 <= i < len(self.texts):
-                    context_blocks.append(f"[{self.game_names[i]}]\n{self.texts[i]}")
-                else:
-                    logger.warning(f"인덱스 {i}에 해당하는 게임 이름 또는 텍스트를 찾을 수 없습니다.")
-            return "\n\n".join(context_blocks)
-        except Exception as e:
-            logger.error(f"❌ 컨텍스트 검색 실패: {str(e)}")
-            return ""
+        context_blocks = []
+        for i in I[0]:
+            if 0 <= i < len(self.game_names) and 0 <= i < len(self.texts):
+                context_blocks.append(f"[{self.game_names[i]}]\n{self.texts[i]}")
+            else:
+                logger.warning(f"인덱스 {i}에 해당하는 게임 이름 또는 텍스트를 찾을 수 없습니다.")
+        return "\n\n".join(context_blocks)
     
-    async def recommend_games(self, query: str, top_k: int = 3, session_id: str = "default_session"):
+    async def recommend_games(self, query: str, session_id: str = "default_session", top_k: int = 3):
         """게임 추천 (RAG 검색 후 LangChain으로 LLM 호출)"""
         try:
-            if not self.initialized:
-                return "RAG 서비스가 초기화되지 않았습니다. 잠시 후 다시 시도해주세요."
-            
             # 쿼리에서 추천 개수 추출
             number_match = re.search(r'(\d+)\s*개', query)
             if number_match:
                 top_k = int(number_match.group(1))
 
-            # 1. RAG 검색: query를 기반으로 유사한 게임 설명을 가져옴
+            # 1. RAG 검색: query를 기반으로 유사한 게임 설명을 가져옴 (첫 번째 코드의 핵심 로직)
             context = self._search_similar_context(query, top_k=top_k)
             
             if not context:
                 return "추천할 게임 데이터를 찾을 수 없습니다. 인덱스나 데이터 로드를 확인해주세요."
 
             # 2. LangChain 체인 호출: 검색된 context와 사용자 쿼리를 LLM에 전달
-            if self.recommendation_chain and self.llm:
-                response = await self.recommendation_chain.ainvoke(
-                    {"query": query, "context": context, "top_k": top_k},
-                    config={"configurable": {"session_id": session_id}}
-                )
-                
-                raw_output = response.content
-                
-                # 3. 출력 후처리
-                if "추천 완료!" in raw_output:
-                    raw_output = raw_output.split("추천 완료!")[0]
-                
-                return raw_output.strip()
-            else:
-                return "AI 모델이 로드되지 않았습니다."
+            response = await self.recommendation_chain.ainvoke(
+                {"query": query, "context": context, "top_k": top_k},
+                config={"configurable": {"session_id": session_id}}
+            )
+            
+            raw_output = response.content
+            
+            # 3. 출력 후처리
+            if "추천 완료!" in raw_output:
+                raw_output = raw_output.split("추천 완료!")[0]
+            
+            return raw_output.strip()
             
         except Exception as e:
             logger.error(f"❌ 게임 추천 실패: {str(e)}")
@@ -280,9 +243,6 @@ class RAGService:
     async def answer_rule_question(self, game_name: str, question: str, session_id: str = "default_session"):
         """룰 질문 답변 (룰 청크 검색 후 LangChain으로 LLM 호출)"""
         try:
-            if not self.initialized:
-                return "RAG 서비스가 초기화되지 않았습니다. 잠시 후 다시 시도해주세요."
-            
             # 게임별 벡터 인덱스 로드
             game_index_path = os.path.join(self.game_vector_base_path, f"{game_name}.faiss")
             game_chunks_path = os.path.join(self.game_vector_base_path, f"{game_name}.json")
@@ -296,40 +256,31 @@ class RAGService:
                 chunks = json.load(f)
             
             # RAG 검색: 룰 질문에 대한 유사 청크 검색
-            if self.embed_model:
-                q_vec = self.embed_model.encode([question], normalize_embeddings=True)
-                D, I = index.search(np.array(q_vec), k=3)
-                retrieved_chunks = [chunks[i] for i in I[0] if i < len(chunks)]
-                
-                context = "\n\n".join(retrieved_chunks)
-                
-                if not context:
-                    return f"'{game_name}' 게임 룰에서 질문에 대한 관련 정보를 찾을 수 없습니다."
+            q_vec = self.embed_model.encode([question], normalize_embeddings=True)
+            D, I = index.search(np.array(q_vec), k=3)
+            retrieved_chunks = [chunks[i] for i in I[0] if i < len(chunks)]
+            
+            context = "\n\n".join(retrieved_chunks)
+            
+            if not context:
+                return f"'{game_name}' 게임 룰에서 질문에 대한 관련 정보를 찾을 수 없습니다."
 
-                # LangChain 체인 호출
-                if self.rule_question_chain:
-                    response = await self.rule_question_chain.ainvoke(
-                        {"game_name": game_name, "question": question, "context": context},
-                        config={"configurable": {"session_id": session_id}}
-                    )
-                    
-                    answer = response.content
-                    return answer.strip()
-                else:
-                    return "AI 모델이 로드되지 않았습니다."
-            else:
-                return "임베딩 모델이 로드되지 않았습니다."
+            # LangChain 체인 호출
+            response = await self.rule_question_chain.ainvoke(
+                {"game_name": game_name, "question": question, "context": context},
+                config={"configurable": {"session_id": session_id}}
+            )
+            
+            answer = response.content
+            return answer.strip()
             
         except Exception as e:
             logger.error(f"❌ 룰 질문 답변 실패: {str(e)}")
             return f"룰 질문 답변 중 오류가 발생했습니다: {str(e)}"
     
-    async def get_rule_summary(self, game_name: str, chat_type: str = "gpt", session_id: str = "default_session"):
+    async def get_rule_summary(self, game_name: str, session_id: str = "default_session"):
         """게임 룰 요약 (전체 룰 텍스트를 LangChain으로 LLM 호출)"""
         try:
-            if not self.initialized:
-                return "RAG 서비스가 초기화되지 않았습니다. 잠시 후 다시 시도해주세요."
-            
             # 게임 정보 찾기
             game_info = None
             for game in self.game_data:
@@ -346,43 +297,14 @@ class RAGService:
                 return f"'{game_name}' 게임의 룰 내용이 비어 있습니다."
 
             # LangChain 체인 호출
-            if self.rule_summary_chain:
-                response = await self.rule_summary_chain.ainvoke(
-                    {"game_name": game_name, "game_rule_text": game_rule_text},
-                    config={"configurable": {"session_id": session_id}}
-                )
-                
-                summary = response.content
-                return summary.strip()
-            else:
-                return "AI 모델이 로드되지 않았습니다."
+            response = await self.rule_summary_chain.ainvoke(
+                {"game_name": game_name, "game_rule_text": game_rule_text},
+                config={"configurable": {"session_id": session_id}}
+            )
+            
+            summary = response.content
+            return summary.strip()
             
         except Exception as e:
             logger.error(f"❌ 룰 요약 실패: {str(e)}")
             return f"룰 요약 중 오류가 발생했습니다: {str(e)}"
-    
-    def get_available_games(self):
-        """사용 가능한 게임 목록 반환"""
-        try:
-            # game_names.json에서 게임 목록 가져오기
-            if hasattr(self, 'game_names') and self.game_names:
-                unique_games = list(set(self.game_names))  # 중복 제거
-                unique_games = [game for game in unique_games if game and game.strip()]  # 빈 문자열 제거
-                unique_games.sort()  # 정렬
-                logger.info(f"✅ {len(unique_games)}개의 게임 로드 완료")
-                return unique_games
-            else:
-                logger.warning("⚠️ game_names 데이터가 없습니다. 기본 게임 목록을 반환합니다.")
-                # 기본 게임 목록 반환
-                return [
-                    "카탄", "스플렌더", "아줄", "윙스팬", "뱅", 
-                    "킹 오브 도쿄", "7 원더스", "도미니언", "스몰 월드", "티켓 투 라이드"
-                ]
-                
-        except Exception as e:
-            logger.error(f"❌ get_available_games 오류: {str(e)}")
-            # 기본 게임 목록 반환
-            return [
-                "카탄", "스플렌더", "아줄", "윙스팬", "뱅", 
-                "킹 오브 도쿄", "7 원더스", "도미니언", "스몰 월드", "티켓 투 라이드"
-            ]
