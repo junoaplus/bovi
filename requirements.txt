@@ -12,12 +12,12 @@ numpy<2
 torch==2.7.1
 transformers==4.52.4
 sentence-transformers==4.1.0
-faiss-gpu==1.11.0
+faiss-gpu==1.7.2
 safetensors==0.5.3
 tokenizers==0.21.1
 
 # 🔗 LangChain (RAG 서비스용)
-langchain-core==0.3.20
+langchain-core==0.3.64
 langchain-openai==0.2.14
 
 # 🎯 LoRA/PEFT (파인튜닝용)
