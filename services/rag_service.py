@@ -14,6 +14,8 @@ from langchain_openai import ChatOpenAI
 
 logger = logging.getLogger(__name__)
 
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
+
 # 세션 기반 클래스 메모리 정의 (LangChain용)
 class InMemoryHistory(BaseChatMessageHistory):
     def __init__(self):
@@ -47,7 +49,7 @@ class RAGService:
         logger.info("✅ 임베딩 모델 로드 완료")
         
         # OpenAI 설정 (LangChain ChatOpenAI 사용)
-        self.openai_api_key = os.getenv("OPENAI_API_KEY")# 환경 변수 사용 권장
+        self.openai_api_key = os.getenv("OPENAI_API_KEY")
         self.model_id = "gpt-3.5-turbo" # 파인튜닝 모델 ID
         self.llm = ChatOpenAI(model_name=self.model_id, temperature=0.7, openai_api_key=self.openai_api_key)
         

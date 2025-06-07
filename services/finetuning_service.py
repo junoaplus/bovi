@@ -2,8 +2,10 @@ import os
 import torch
 import logging
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 class FinetuningService:
     """파인튜닝된 모델을 사용한 룰 설명 서비스"""
