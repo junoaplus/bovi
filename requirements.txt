@@ -20,8 +20,7 @@ tokenizers==0.21.1
 langchain-core==0.3.64
 langchain-openai==0.2.14
 
-# 🎯 LoRA/PEFT (파인튜닝용)
-peft==0.15.2
+# 🎯 모델 가속화 (파인튜닝용)
 accelerate==1.7.0
 
 # 🌐 네트워킹 & HTTP

@@ -2,7 +2,6 @@ import os
 import torch
 import logging
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from peft import PeftModel
 
 logger = logging.getLogger(__name__)
 
@@ -23,45 +22,57 @@ class FinetuningService:
     def _load_model(self):
         """파인튜닝된 모델 로드"""
         try:
-            # 1. Base 모델 로드
-            base_model_name = "beomi/KoAlpaca-Polyglot-5.8B"
-            logger.info(f"📥 Base 모델 로드 중: {base_model_name}")
+            # 허깅페이스에서 직접 파인튜닝된 모델 로드
+            finetuned_model_name = "minjeongHuggingFace/koalpaca-bang_e9"
+            logger.info(f"📥 파인튜닝된 모델 로드 중: {finetuned_model_name}")
             
-            self.base_model = AutoModelForCausalLM.from_pretrained(
-                base_model_name,
+            # 1. 파인튜닝된 모델 로드
+            self.model = AutoModelForCausalLM.from_pretrained(
+                finetuned_model_name,
                 device_map="auto",
                 torch_dtype=torch.float16,
                 trust_remote_code=True
             )
             
-            # 2. Tokenizer 로드
+            # 2. Tokenizer 로드 (같은 모델에서)
             logger.info("📥 Tokenizer 로드 중...")
             self.tokenizer = AutoTokenizer.from_pretrained(
-                base_model_name, 
+                finetuned_model_name, 
                 use_fast=False,
                 trust_remote_code=True
             )
             
-            # 3. LoRA 어댑터 로드
-            lora_model_path = "./models/koalpaca-bang-model"
-            if os.path.exists(lora_model_path):
-                logger.info(f"📥 LoRA 모델 로드 중: {lora_model_path}")
-                self.model = PeftModel.from_pretrained(self.base_model, lora_model_path)
-                
-                # 4. LoRA 병합 (선택사항)
-                logger.info("🔗 LoRA 어댑터 병합 중...")
-                self.model = self.model.merge_and_unload()
-                
-                logger.info("✅ 파인튜닝 모델 로드 완료")
-            else:
-                logger.warning(f"⚠️ LoRA 모델을 찾을 수 없어 Base 모델만 사용합니다: {lora_model_path}")
-                self.model = self.base_model
+            logger.info("✅ 파인튜닝 모델 로드 완료")
                 
         except Exception as e:
             logger.error(f"❌ 모델 로드 실패: {str(e)}")
-            # 모델 로드 실패 시 None으로 설정
-            self.model = None
-            self.tokenizer = None
+            logger.info("🔄 기본 모델로 대체 시도...")
+            
+            try:
+                # 기본 KoAlpaca 모델로 대체
+                base_model_name = "beomi/KoAlpaca-Polyglot-5.8B"
+                logger.info(f"📥 기본 모델 로드: {base_model_name}")
+                
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    base_model_name,
+                    device_map="auto",
+                    torch_dtype=torch.float16,
+                    trust_remote_code=True
+                )
+                
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    base_model_name, 
+                    use_fast=False,
+                    trust_remote_code=True
+                )
+                
+                logger.info("✅ 기본 모델 로드 완료")
+                
+            except Exception as backup_e:
+                logger.error(f"❌ 기본 모델 로드도 실패: {str(backup_e)}")
+                # 모델 로드 실패 시 None으로 설정
+                self.model = None
+                self.tokenizer = None
     
     async def answer_question(self, game_name: str, question: str):
         """파인튜닝된 모델로 질문 답변"""
@@ -112,6 +123,6 @@ class FinetuningService:
             "model_loaded": self.model is not None,
             "tokenizer_loaded": self.tokenizer is not None,
             "device": self.device,
-            "base_model": "beomi/KoAlpaca-Polyglot-5.8B",
-            "lora_model": "./models/koalpaca-bang-model"
+            "finetuned_model": "minjeongHuggingFace/koalpaca-bang_e9",
+            "fallback_model": "beomi/KoAlpaca-Polyglot-5.8B"
         }
