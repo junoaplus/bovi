@@ -15,6 +15,7 @@ sentence-transformers==4.1.0
 faiss-gpu==1.7.2
 safetensors==0.5.3
 tokenizers==0.21.1
+peft==0.15.2
 
 # 🔗 LangChain (RAG 서비스용)
 langchain-core==0.3.64

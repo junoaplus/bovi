@@ -26,7 +26,8 @@ class FinetuningService:
         """파인튜닝된 모델 로드 (base 모델 + PEFT 어댑터)"""
         try:
             finetuned_model_name = os.getenv("FINETUNING_MODEL_ID")
-            logger.info(f"📥 파인튜닝된 어댑터 로드 중: {finetuned_model_name}")
+            revision = "master" 
+            logger.info(f"📥 파인튜닝된 어댑터 로드 중: {finetuned_model_name} (revision: {revision})")
             
             # 1. base 모델 명 지정 (환경변수 or 코드 내 기본값)
             base_model_name = "beomi/KoAlpaca-Polyglot-5.8B"
@@ -44,6 +45,7 @@ class FinetuningService:
             self.model = PeftModel.from_pretrained(
                 base_model,
                 finetuned_model_name,
+                revision=revision,
                 device_map="auto",
                 torch_dtype=torch.float16,
                 trust_remote_code=True
@@ -54,7 +56,8 @@ class FinetuningService:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 base_model_name,
                 use_fast=False,
-                trust_remote_code=True
+                trust_remote_code=True,
+                revision=revision
             )
             
             logger.info("✅ 파인튜닝 모델(어댑터) 로드 완료")
