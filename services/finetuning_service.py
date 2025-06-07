@@ -23,7 +23,7 @@ class FinetuningService:
         """파인튜닝된 모델 로드"""
         try:
             # 허깅페이스에서 직접 파인튜닝된 모델 로드
-            finetuned_model_name = "minjeongHuggingFace/koalpaca-bang_e9"
+            finetuned_model_name = os.getenv("FINETUNING_MODEL_ID")
             logger.info(f"📥 파인튜닝된 모델 로드 중: {finetuned_model_name}")
             
             # 1. 파인튜닝된 모델 로드
