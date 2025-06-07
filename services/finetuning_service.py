@@ -56,8 +56,7 @@ class FinetuningService:
             self.tokenizer = AutoTokenizer.from_pretrained(
                 base_model_name,
                 use_fast=False,
-                trust_remote_code=True,
-                revision=revision
+                trust_remote_code=True
             )
             
             logger.info("✅ 파인튜닝 모델(어댑터) 로드 완료")
